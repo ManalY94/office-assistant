@@ -316,26 +316,24 @@ if (keyInjected) {
 refreshSettingsUI();
 
 // ---------- Cast Web Receiver init ----------
-// Shaka's receiver redirects to us *top-level* (no iframe, no media-player
-// layer stealing taps) only if we run CAF ourselves. Their docs warn that if
-// the destination doesn't run CAF, "this receiver app will time out and fail",
-// so we must start the context here.
+// Adopt the Cast receiver session after Shaka's redirect. Their receiver does
+// location.href = our URL (making us top-level, which removes the iframe + the
+// media-player layer that was swallowing taps) and does NOT start CAF - it
+// hands the receiver session to us. If we don't call start() here, the device
+// sees the app die and reports LAUNCH_ERROR CANCELLED.
 //
-// NOTE: we call init() directly. window.__onGCastApiAvailable is a SENDER-side
-// hook and is never invoked by the cast_receiver_framework, so guarding the
-// init inside it would leave it permanently un-started.
+// NOTE: window.__onGCastApiAvailable is a SENDER-side hook and is never invoked
+// by the cast_receiver_framework, so the init must be called directly, not
+// guarded inside it (that would leave the context permanently un-started).
 //
-// Only do this inside the real Cast webview (UA contains "CrKey"); a normal
-// browser must never try to boot a receiver context.
+// Guarded by "am I top-level with the CAF lib present" rather than a UA sniff:
+// the CrKey user-agent is not reliable across Cast devices (e.g. Lenovo Smart
+// Display), and a wrong guess silently kills the launch. Inside Shaka's iframe
+// their context owns the session, so we must not start our own.
 (function initCastReceiver() {
-  if (!/CrKey/i.test(navigator.userAgent)) return;           // not a Cast device
+  if (window.top !== window.self) return;              // running in an iframe
   if (!window.cast || !cast.framework || !cast.framework.CastReceiverContext) return;
   try {
-    // Mirrors the exact call Shaka's own receiver uses on this device:
-    //   context.start({ statusText, disableIdleTimeout: true })
-    // context.init(options) is NOT equivalent here - start() attaches the
-    // context to the live CAF runtime, which is what stops the launch from
-    // being reported as CANCELLED after the redirect.
     const context = cast.framework.CastReceiverContext.getInstance();
     context.start({
       statusText: 'Office Assistant',
