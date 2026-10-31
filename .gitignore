@@ -9,3 +9,6 @@ Thumbs.db
 # Never commit real secrets — the key lives on the device only
 .env
 *.key
+
+key.txt
+launch_redirect.js

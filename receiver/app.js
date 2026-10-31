@@ -315,12 +315,35 @@ if (keyInjected) {
 }
 refreshSettingsUI();
 
-// ---------- Cast Web Receiver init (no-op if opened in a normal browser) ----------
-window.__onGCastApiAvailable = function (isAvailable) {
-  if (!isAvailable || !window.cast || !cast.framework) return;
-  const ctx = cast.framework.CastReceiverContext.getInstance();
-  const options = new cast.framework.CastReceiverOptions();
-  options.maxInactivity = 60 * 60 * 1000; // keep alive 1h after sender disconnect
-  options.customNamespaces = { 'json': 'urn:x-cast:office.assistant' };
-  ctx.init(options);
-};
+// ---------- Cast Web Receiver init ----------
+// Shaka's receiver redirects to us *top-level* (no iframe, no media-player
+// layer stealing taps) only if we run CAF ourselves. Their docs warn that if
+// the destination doesn't run CAF, "this receiver app will time out and fail",
+// so we must start the context here.
+//
+// NOTE: we call init() directly. window.__onGCastApiAvailable is a SENDER-side
+// hook and is never invoked by the cast_receiver_framework, so guarding the
+// init inside it would leave it permanently un-started.
+//
+// Only do this inside the real Cast webview (UA contains "CrKey"); a normal
+// browser must never try to boot a receiver context.
+(function initCastReceiver() {
+  if (!/CrKey/i.test(navigator.userAgent)) return;           // not a Cast device
+  if (!window.cast || !cast.framework || !cast.framework.CastReceiverContext) return;
+  try {
+    // Mirrors the exact call Shaka's own receiver uses on this device:
+    //   context.start({ statusText, disableIdleTimeout: true })
+    // context.init(options) is NOT equivalent here - start() attaches the
+    // context to the live CAF runtime, which is what stops the launch from
+    // being reported as CANCELLED after the redirect.
+    const context = cast.framework.CastReceiverContext.getInstance();
+    context.start({
+      statusText: 'Office Assistant',
+      disableIdleTimeout: true,   // kiosk: never self-dismiss when idle
+    });
+    console.log('[cast] receiver context started (kiosk mode)');
+  } catch (e) {
+    // Degraded: app still renders and works, just without a live CAF context.
+    console.warn('[cast] receiver context not started:', e && e.message);
+  }
+})();

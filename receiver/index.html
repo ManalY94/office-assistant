@@ -150,12 +150,20 @@
     border-radius: 12px; padding: 14px 16px; font-size: 15px; font-family: monospace; margin-bottom: 18px; }
   .modal input:focus { outline: none; border-color: var(--accent); }
 
+  /* CAF injects <cast-media-player>. Push it behind our UI and make it
+     click-through so it can never swallow taps meant for the app. */
+  cast-media-player { z-index: 0 !important; pointer-events: none !important; }
+  .screen { z-index: 10; }
+
   .scrollbar::-webkit-scrollbar, ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: #2d3743; border-radius: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
+
+  <!-- Required by the Cast Web Receiver framework when running top-level. -->
+  <cast-media-player></cast-media-player>
 
   <!-- ============ HOME ============ -->
   <section id="home" class="screen active">
@@ -276,6 +284,9 @@
     </div>
   </div>
 
+<!-- Cast Web Receiver framework. Loaded synchronously before app.js so
+     window.cast is defined by the time app.js runs. -->
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
