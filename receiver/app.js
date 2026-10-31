@@ -315,33 +315,9 @@ if (keyInjected) {
 }
 refreshSettingsUI();
 
-// ---------- Cast Web Receiver init ----------
-// Adopt the Cast receiver session after Shaka's redirect. Their receiver does
-// location.href = our URL (making us top-level, which removes the iframe + the
-// media-player layer that was swallowing taps) and does NOT start CAF - it
-// hands the receiver session to us. If we don't call start() here, the device
-// sees the app die and reports LAUNCH_ERROR CANCELLED.
-//
-// NOTE: window.__onGCastApiAvailable is a SENDER-side hook and is never invoked
-// by the cast_receiver_framework, so the init must be called directly, not
-// guarded inside it (that would leave the context permanently un-started).
-//
-// Guarded by "am I top-level with the CAF lib present" rather than a UA sniff:
-// the CrKey user-agent is not reliable across Cast devices (e.g. Lenovo Smart
-// Display), and a wrong guess silently kills the launch. Inside Shaka's iframe
-// their context owns the session, so we must not start our own.
-(function initCastReceiver() {
-  if (window.top !== window.self) return;              // running in an iframe
-  if (!window.cast || !cast.framework || !cast.framework.CastReceiverContext) return;
-  try {
-    const context = cast.framework.CastReceiverContext.getInstance();
-    context.start({
-      statusText: 'Office Assistant',
-      disableIdleTimeout: true,   // kiosk: never self-dismiss when idle
-    });
-    console.log('[cast] receiver context started (kiosk mode)');
-  } catch (e) {
-    // Degraded: app still renders and works, just without a live CAF context.
-    console.warn('[cast] receiver context not started:', e && e.message);
-  }
-})();
+// ---------- Cast Web Receiver note ----------
+// The receiver context is started by an inline script in index.html, right
+// after the CAF framework loads and BEFORE app.js. That placement is
+// deliberate: it guarantees the session is adopted even if anything in this
+// file throws on the device's webview (which would otherwise leave the launch
+// reported as CANCELLED). Nothing to do here.
