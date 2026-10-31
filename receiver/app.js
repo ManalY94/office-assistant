@@ -4,16 +4,36 @@
    ============================================================ */
 
 // ---------- Storage ----------
-const store = {
-  get key()   { return localStorage.getItem('or_key') || ''; },
-  set key(v)  { v ? localStorage.setItem('or_key', v) : localStorage.removeItem('or_key'); },
-  get model() { return localStorage.getItem('or_model') || ''; },
-  set model(v){ v ? localStorage.setItem('or_model', v) : localStorage.removeItem('or_model'); },
-  get sys()   { return localStorage.getItem('or_sys') || ''; },
-  set sys(v)  { localStorage.setItem('or_sys', v); },
-  get city()  { return localStorage.getItem('or_city') || 'London'; },
-  set city(v) { localStorage.setItem('or_city', v); },
-};
+const store = (() => {
+  // Defensive: if a locked-down browser blocks storage, don't crash — degrade.
+  const safe = {
+    get(k)    { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del(k)    { try { localStorage.removeItem(k); } catch (e) {} },
+  };
+  return {
+    get key()    { return safe.get('or_key') || ''; },
+    set key(v)   { v ? safe.set('or_key', v) : safe.del('or_key'); },
+    get model()  { return safe.get('or_model') || ''; },
+    set model(v) { v ? safe.set('or_model', v) : safe.del('or_model'); },
+    get sys()    { return safe.get('or_sys') || ''; },
+    set sys(v)   { safe.set('or_sys', v); },
+    get city()   { return safe.get('or_city') || 'London'; },
+    set city(v)  { safe.set('or_city', v); },
+  };
+})();
+
+// Brief on-screen confirmation banner.
+function toast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;top:18px;transform:translateX(-50%);' +
+    'background:#1c232e;color:#e6edf3;border:1px solid rgba(79,140,255,.6);' +
+    'padding:14px 24px;border-radius:14px;font-size:17px;z-index:99;' +
+    'box-shadow:0 8px 32px rgba(0,0,0,.55);transition:opacity .4s;';
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 450); }, 5000);
+}
 
 const DEFAULT_MODEL = 'google/gemma-4-26b-a4b-it:free';
 
@@ -271,22 +291,26 @@ async function send() {
   }
 }
 
-// One-time key injection via URL fragment (#key=...).
-// A fragment is NEVER sent to the server, so the key cannot leak into
-// GitHub Pages access logs or the public repository.
-(function importKeyFromHash() {
-  const m = location.hash.match(/[#&]key=([^&]+)/);
+// One-time key injection via URL fragment (#key=...), with query-param
+// fallback. The fragment is NEVER sent to the server, so the key cannot leak
+// into GitHub Pages access logs or the public repository.
+let keyInjected = false;
+(function importKeyFromUrl() {
+  const m = location.hash.match(/[#&]key=([^&]+)/) ||
+            location.search.match(/[?&]key=([^&#]+)/);
   if (!m) return;
   try {
     const k = decodeURIComponent(m[1]).trim();
-    if (k) store.key = k;
-  } catch (e) { /* malformed fragment: ignore */ }
+    if (k) { store.key = k; keyInjected = true; }
+  } catch (e) { /* malformed: ignore */ }
   // Scrub the secret out of the visible URL immediately.
-  history.replaceState(null, '', location.pathname + location.search);
+  history.replaceState(null, '', location.pathname);
 })();
 
 // ---------- Boot: prompt for key if missing ----------
-if (!store.key) {
+if (keyInjected) {
+  toast('✅ API key saved on this display — assistant ready');
+} else if (!store.key) {
   document.getElementById('keyOverlay').classList.add('active');
 }
 refreshSettingsUI();
