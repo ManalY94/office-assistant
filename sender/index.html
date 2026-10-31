@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Launch Office Assistant</title>
+<style>
+  body { font-family: "Segoe UI", system-ui, sans-serif; background:#0d1117; color:#e6edf3;
+         max-width:640px; margin:60px auto; padding:0 24px; }
+  h1 { font-weight:300; } p { color:#8b949e; line-height:1.6; }
+  input { width:100%; background:#161b22; color:#e6edf3; border:1px solid #2d3743;
+          border-radius:10px; padding:13px 15px; font-size:15px; font-family:monospace; margin-bottom:14px; }
+  button { padding:13px 26px; border:none; border-radius:10px; background:linear-gradient(145deg,#4f8cff,#8a5cff);
+           color:#fff; font-size:16px; cursor:pointer; }
+  .status { margin-top:20px; padding:14px; border-radius:10px; background:#161b22; border:1px solid #2d3743; min-height:20px; }
+  label { display:block; font-size:14px; margin-bottom:7px; }
+</style>
+</head>
+<body>
+  <h1>Launch Office Assistant on the display</h1>
+  <p>Paste your Cast <b>Receiver App ID</b> (from the Google Cast Developer Console). The console already points that App ID at your hosted receiver URL. Click Launch and pick <b>Office Display</b>.</p>
+
+  <label>Receiver App ID</label>
+  <input id="appId" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" />
+
+  <button id="launch">Launch on Office Display</button>
+  <div class="status" id="status">Ready.</div>
+
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+<script>
+  const status = m => document.getElementById('status').textContent = m;
+  let castSession = null;
+
+  window.__onGCastApiAvailable = ok => { if (!ok) status('Cast framework not available in this browser. Use Chrome.'); };
+
+  function initCast(appId, cb) {
+    cast.framework.CastContext.setAppConfig({ appId, autoJoinPolicy: cast.framework.AutoJoinOrigin.ORIGIN_CONTROLLED });
+    cast.framework.CastContext.getInstance().setOptions({
+      language: 'en-US', receiverApplicationId: appId,
+      autoJoinPolicy: cast.framework.AutoJoinOrigin.ORIGIN_CONTROLLED
+    });
+    const ctx = cast.framework.CastContext.getInstance();
+    ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, e => {
+      if (e.sessionState === 'SESSION_STARTED') { castSession = e.session; status('✅ Launched. Office Assistant should now be running on the display.'); }
+      if (e.sessionState === 'SESSION_RESUMED') { castSession = e.session; status('✅ Resumed on the display.'); }
+    });
+    cb(ctx);
+  }
+
+  document.getElementById('launch').onclick = () => {
+    const appId = document.getElementById('appId').value.trim();
+    if (!appId) { status('Enter your App ID first.'); return; }
+    status('Requesting Cast session…');
+    initCast(appId, ctx => {
+      ctx.requestSession().then(() => status('Session requested…'))
+        .catch(e => status('Could not connect: ' + e + ' — is the display on the same Wi-Fi and awake?'));
+    });
+  };
+</script>
+</body>
+</html>

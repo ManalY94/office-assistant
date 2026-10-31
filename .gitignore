@@ -1,0 +1,11 @@
+# Dependencies / build artifacts
+node_modules/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Never commit real secrets — the key lives on the device only
+.env
+*.key
