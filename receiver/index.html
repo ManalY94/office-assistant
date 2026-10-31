@@ -3,6 +3,28 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<!-- Cast Web Receiver framework + context start, placed in <head> so the
+     receiver session is adopted as EARLY as possible. Shaka's redirect hands
+     the receiver session to this page; if context.start() runs too late (after
+     a large DOM/CSS parse) the device reports the launch as CANCELLED. -->
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<script>
+(function startCastNow() {
+  // Only when running top-level (i.e. after Shaka's redirect). Inside their
+  // iframe their context owns the session and we must not start our own.
+  if (window.top !== window.self) return;
+  if (!window.cast || !cast.framework || !cast.framework.CastReceiverContext) return;
+  try {
+    cast.framework.CastReceiverContext.getInstance().start({
+      statusText: 'Office Assistant',
+      disableIdleTimeout: true,   // kiosk: never self-dismiss when idle
+    });
+    console.log('[cast] receiver context started in head (kiosk mode)');
+  } catch (e) {
+    console.warn('[cast] head receiver start failed:', e && e.message);
+  }
+})();
+</script>
 <title>Office Assistant</title>
 <style>
   :root {
@@ -284,30 +306,8 @@
     </div>
   </div>
 
-<!-- Cast Web Receiver framework. Loaded synchronously so window.cast is
-     defined before the init script below runs. -->
-<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
-<!-- Start the receiver context IMMEDIATELY, before app.js. If app.js throws
-     on this device's webview, the context would otherwise never start and the
-     launch would be reported as CANCELLED (Shaka's redirect hands the receiver
-     session to this page and expects us to adopt it). -->
-<script>
-(function startCastNow() {
-  // Only when running top-level (i.e. after Shaka's redirect). Inside their
-  // iframe their context owns the session and we must not start our own.
-  if (window.top !== window.self) return;
-  if (!window.cast || !cast.framework || !cast.framework.CastReceiverContext) return;
-  try {
-    cast.framework.CastReceiverContext.getInstance().start({
-      statusText: 'Office Assistant',
-      disableIdleTimeout: true,   // kiosk: never self-dismiss when idle
-    });
-    console.log('[cast] receiver context started early (kiosk mode)');
-  } catch (e) {
-    console.warn('[cast] early receiver start failed:', e && e.message);
-  }
-})();
-</script>
+<!-- app.js: the CAF context is already started by the inline script in <head>,
+     so this file only contains app UI logic. -->
 <script src="app.js"></script>
 </body>
 </html>
