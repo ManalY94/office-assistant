@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>CAF Redirect Test</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%;
+      background: #101418; color: #e6edf3; font-family: system-ui, sans-serif; }
+    .wrap { display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%; text-align: center; }
+    h1 { font-size: 6vw; margin: 0 0 .3em; }
+    p { font-size: 3vw; color: #8b949e; }
+    .ok { color: #3fb950; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>CAF Redirect Test</h1>
+    <p id="status">loading CAF...</p>
+    <p>If you can read this, the redirect mode launched a top-level page.</p>
+  </div>
+
+  <!-- Must load before the init script below. -->
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  <script>
+    (function () {
+      var statusEl = document.getElementById('status');
+      try {
+        if (window.top !== window.self) {
+          statusEl.textContent = 'WARNING: running inside an iframe (redirect did NOT happen)';
+          return;
+        }
+        if (!window.cast || !cast.framework || !cast.framework.CastReceiverContext) {
+          statusEl.textContent = 'ERROR: cast framework not available';
+          return;
+        }
+        cast.framework.CastReceiverContext.getInstance().start({
+          statusText: 'CAF TEST',
+          disableIdleTimeout: true,
+        });
+        statusEl.textContent = 'CAF CONTEXT STARTED (top-level) - redirect works on this device';
+        statusEl.className = 'ok';
+        console.log('[caftest] started');
+      } catch (e) {
+        statusEl.textContent = 'ERROR: ' + (e && e.message);
+      }
+    })();
+  </script>
+</body>
+</html>
