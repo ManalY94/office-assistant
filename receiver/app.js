@@ -15,7 +15,7 @@ const store = {
   set city(v) { localStorage.setItem('or_city', v); },
 };
 
-const DEFAULT_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+const DEFAULT_MODEL = 'google/gemma-4-26b-a4b-it:free';
 
 // ---------- Navigation ----------
 const screens = ['home', 'chat', 'webview', 'settings'];
@@ -156,10 +156,10 @@ async function loadModels() {
   } catch { models = []; }
   if (!models.length) {
     models = [
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemma-2-9b-it:free',
-      'mistralai/mistral-7b-instruct:free',
-      'qwen/qwen-2.5-72b-instruct:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'nvidia/nemotron-3.5-super-vl:free',
+      'openrouter/free',
     ];
   }
   sel.innerHTML = '';
@@ -270,6 +270,20 @@ async function send() {
     chatInput.focus();
   }
 }
+
+// One-time key injection via URL fragment (#key=...).
+// A fragment is NEVER sent to the server, so the key cannot leak into
+// GitHub Pages access logs or the public repository.
+(function importKeyFromHash() {
+  const m = location.hash.match(/[#&]key=([^&]+)/);
+  if (!m) return;
+  try {
+    const k = decodeURIComponent(m[1]).trim();
+    if (k) store.key = k;
+  } catch (e) { /* malformed fragment: ignore */ }
+  // Scrub the secret out of the visible URL immediately.
+  history.replaceState(null, '', location.pathname + location.search);
+})();
 
 // ---------- Boot: prompt for key if missing ----------
 if (!store.key) {
