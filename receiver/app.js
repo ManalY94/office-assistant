@@ -14,6 +14,8 @@ const store = (() => {
   return {
     get key()    { return safe.get('or_key') || ''; },
     set key(v)   { v ? safe.set('or_key', v) : safe.del('or_key'); },
+    get ytKey()  { return safe.get('or_yt') || ''; },
+    set ytKey(v) { v ? safe.set('or_yt', v) : safe.del('or_yt'); },
     get model()  { return safe.get('or_model') || ''; },
     set model(v) { v ? safe.set('or_model', v) : safe.del('or_model'); },
     get sys()    { return safe.get('or_sys') || ''; },
@@ -110,6 +112,20 @@ loadWeather(); setInterval(loadWeather, 1000 * 60 * 30);
 
 // ---------- Web view (YouTube / Google with a real search bar) ----------
 let webMode = 'search';
+const ytResults = document.getElementById('ytResults');
+const webframe  = document.getElementById('webframe');
+const ytBackBtn = document.getElementById('ytBack');
+
+// Toggle between the results list and the video/search iframe.
+function showYtResults(showIt) {
+  ytResults.style.display = showIt ? 'block' : 'none';
+  webframe.style.display  = showIt ? 'none' : 'block';
+}
+// YouTube titles arrive HTML-escaped (&amp;, &#39; …) — decode for display.
+function decodeEntities(s) {
+  const t = document.createElement('textarea'); t.innerHTML = s; return t.value;
+}
+
 function openWebLauncher(mode) {
   webMode = mode;
   document.getElementById('webTitle').firstChild.textContent = mode === 'youtube' ? 'YouTube' : 'Google';
@@ -118,23 +134,98 @@ function openWebLauncher(mode) {
   const input = document.getElementById('webSearchInput');
   input.placeholder = mode === 'youtube' ? 'Search YouTube…' : 'Search Google…';
   input.value = '';
-  // Start on a friendly homepage inside the frame
-  document.getElementById('webframe').src =
-    mode === 'youtube' ? 'https://www.youtube.com/embed?listType=search&list=' + encodeURIComponent('trending')
-                       : 'https://www.google.com/search?igu=1&q=news';
+  ytBackBtn.style.display = 'none';
+  if (mode === 'youtube') {
+    // Friendly hint instead of auto-searching (saves API quota).
+    webframe.src = 'about:blank';
+    ytResults.innerHTML = '<div class="ytmsg">Search for videos above ⬆</div>';
+    showYtResults(true);
+  } else {
+    webframe.src = 'https://www.google.com/search?igu=1&q=news';
+    showYtResults(false);
+  }
   show('webview');
   setTimeout(() => input.focus(), 150);
 }
-function runWebSearch() {
+
+async function runWebSearch() {
   const q = document.getElementById('webSearchInput').value.trim();
   if (!q) return;
-  document.getElementById('webframe').src = webMode === 'youtube'
-    ? 'https://www.youtube.com/embed?listType=search&list=' + encodeURIComponent(q)
-    : 'https://www.google.com/search?igu=1&q=' + encodeURIComponent(q);
+  if (webMode !== 'youtube') {
+    showYtResults(false);
+    webframe.src = 'https://www.google.com/search?igu=1&q=' + encodeURIComponent(q);
+    return;
+  }
+  // YouTube: search via the official Data API (listType=search was removed by
+  // Google in 2020, and youtube.com/results can't be framed — so this is the
+  // only reliable path). Render tappable results, then embed the chosen video.
+  if (!store.ytKey) {
+    ytResults.innerHTML = '<div class="ytmsg">YouTube search needs a free API key.<br>It will be added on the next launch.</div>';
+    showYtResults(true);
+    return;
+  }
+  ytResults.innerHTML = '<div class="ytmsg">Searching…</div>';
+  showYtResults(true);
+  try {
+    const url = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=12' +
+                '&q=' + encodeURIComponent(q) + '&key=' + encodeURIComponent(store.ytKey);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const j = await res.json();
+    if (j.error) throw new Error(j.error.message || 'API error');
+    renderYtResults(j.items || []);
+  } catch (e) {
+    ytResults.innerHTML = '<div class="ytmsg">⚠️ YouTube search failed:<br>' + (e.message || 'network error') + '</div>';
+  }
 }
+
+function renderYtResults(items) {
+  ytResults.innerHTML = '';
+  const vids = items.filter(it => it.id && it.id.videoId);
+  if (!vids.length) {
+    ytResults.innerHTML = '<div class="ytmsg">No videos found.</div>';
+    showYtResults(true);
+    return;
+  }
+  vids.forEach(it => {
+    const vid = it.id.videoId;
+    const title = decodeEntities(it.snippet.title || '');
+    const tn = (it.snippet.thumbnails && (it.snippet.thumbnails.medium || it.snippet.thumbnails.default)) || {};
+    const row = document.createElement('div');
+    row.className = 'ytrow';
+    const img = document.createElement('img');
+    img.className = 'ytthumb'; img.src = tn.url || ''; img.alt = ''; img.loading = 'lazy';
+    const t = document.createElement('div');
+    t.className = 'yttitle'; t.textContent = title;
+    row.appendChild(img); row.appendChild(t);
+    row.onclick = () => playVideo(vid);
+    ytResults.appendChild(row);
+  });
+  showYtResults(true);
+}
+
+function playVideo(vid) {
+  ytBackBtn.style.display = 'block';
+  webframe.src = 'https://www.youtube.com/embed/' + vid + '?autoplay=1&rel=0';
+  showYtResults(false);
+}
+
+ytBackBtn.onclick = () => {
+  ytBackBtn.style.display = 'none';
+  webframe.src = 'about:blank';
+  showYtResults(true);
+};
+
 document.getElementById('webSearchBtn').onclick = runWebSearch;
 document.getElementById('webSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') runWebSearch(); });
-document.getElementById('webHome').onclick = () => { document.getElementById('webframe').src = 'about:blank'; show('home'); };
+document.getElementById('webHome').onclick = () => {
+  webframe.src = 'about:blank';
+  ytBackBtn.style.display = 'none';
+  showYtResults(false);
+  show('home');
+};
 
 // ---------- Settings UI ----------
 function refreshSettingsUI() {
@@ -342,11 +433,13 @@ async function send() {
 // ---------- Voice input (speech-to-text) ----------
 (function setupVoice() {
   const micBtn = document.getElementById('micBtn');
+  if (!micBtn) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
-    // Not supported in this webview — hide the mic rather than show a button
-    // that can never work.
-    if (micBtn) micBtn.style.display = 'none';
+    // The display's Cast browser doesn't expose the free web speech API (and
+    // "Hey Google" can't type into this app's chat box). Keep the mic visible
+    // but explain, so it's never a silently-missing control.
+    micBtn.onclick = () => toast('🎤 Voice input isn’t available on this display. Please type instead.');
     return;
   }
   const rec = new SR();
@@ -407,12 +500,22 @@ let keyInjected = false;
 (function importKeyFromUrl() {
   const m = location.hash.match(/[#&]key=([^&]+)/) ||
             location.search.match(/[?&]key=([^&#]+)/);
-  if (!m) return;
-  try {
-    const k = decodeURIComponent(m[1]).trim();
-    if (k) { store.key = k; keyInjected = true; }
-  } catch (e) { /* malformed: ignore */ }
-  // Scrub the secret out of the visible URL immediately.
+  if (m) {
+    try {
+      const k = decodeURIComponent(m[1]).trim();
+      if (k) { store.key = k; keyInjected = true; }
+    } catch (e) { /* malformed: ignore */ }
+  }
+  // Optional YouTube Data API key (for YouTube search), same secure delivery.
+  const y = location.hash.match(/[#&]yt=([^&]+)/) ||
+            location.search.match(/[?&]yt=([^&#]+)/);
+  if (y) {
+    try {
+      const k = decodeURIComponent(y[1]).trim();
+      if (k) store.ytKey = k;
+    } catch (e) { /* malformed: ignore */ }
+  }
+  // Scrub the secrets out of the visible URL immediately.
   history.replaceState(null, '', location.pathname);
 })();
 
