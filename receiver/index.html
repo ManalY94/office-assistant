@@ -172,9 +172,12 @@
     border-radius: 12px; padding: 14px 16px; font-size: 15px; font-family: monospace; margin-bottom: 18px; }
   .modal input:focus { outline: none; border-color: var(--accent); }
 
-  /* CAF injects <cast-media-player>. Push it behind our UI and make it
-     click-through so it can never swallow taps meant for the app. */
-  cast-media-player { z-index: 0 !important; pointer-events: none !important; }
+  /* CAF's <cast-media-player> is a full-screen media surface. Its shadow-DOM
+     internals capture pointer events (to catch play/pause taps), and
+     pointer-events:none on the HOST does not pierce that shadow DOM. The only
+     reliable way to stop it eating taps is to remove it from rendering and
+     hit-testing entirely. We never play media, so hiding it is safe. */
+  cast-media-player { display: none !important; }
   .screen { z-index: 10; }
 
   .scrollbar::-webkit-scrollbar, ::-webkit-scrollbar { width: 10px; height: 10px; }

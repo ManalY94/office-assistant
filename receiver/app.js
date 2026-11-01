@@ -37,6 +37,44 @@ function toast(msg) {
 
 const DEFAULT_MODEL = 'google/gemma-4-26b-a4b-it:free';
 
+// ---------- Input diagnostics (only if launched with #...&diag=1) ----------
+// Capture-phase listeners on window fire BEFORE any target handler and cannot
+// be blocked by an overlay inside the document, so this is a reliable probe of
+// whether taps reach the page at all and what element is actually on top.
+// Activated only via the URL fragment so normal launches are unaffected.
+if (/(?:#|&)diag=1/.test(location.hash)) {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99999;' +
+    'background:rgba(20,26,36,.96);color:#e6edf3;border:1px solid #4f8cff;' +
+    'padding:12px 16px;border-radius:12px;font:14px/1.5 monospace;' +
+    'max-width:70%;pointer-events:none;white-space:pre-wrap;';
+  box.textContent = 'DIAG: tap anywhere on the screen...';
+  document.body.appendChild(box);
+  let n = 0;
+  const desc = el => {
+    if (!el) return 'null';
+    let s = el.tagName || '?';
+    if (el.id) s += '#' + el.id;
+    const c = el.className;
+    if (typeof c === 'string' && c) s += '.' + c.trim().split(/\s+/)[0];
+    return s;
+  };
+  const report = (type, e) => {
+    n++;
+    let under = '';
+    if (e.clientX != null || e.clientY != null) {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      under = '  under=' + desc(hit);
+    }
+    box.textContent = 'DIAG n=' + n + '  last=' + type +
+      ' @ ' + Math.round(e.clientX || 0) + ',' + Math.round(e.clientY || 0) +
+      '\ntarget=' + desc(e.target) + under +
+      '\ntopLevel=' + (window.top === window.self);
+  };
+  ['pointerdown', 'touchstart', 'mousedown', 'click'].forEach(t =>
+    window.addEventListener(t, e => report(t, e), true));
+}
+
 // ---------- Navigation ----------
 const screens = ['home', 'chat', 'webview', 'settings'];
 function show(id) {
