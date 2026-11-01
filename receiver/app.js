@@ -436,10 +436,25 @@ async function send() {
   if (!micBtn) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
-    // The display's Cast browser doesn't expose the free web speech API (and
-    // "Hey Google" can't type into this app's chat box). Keep the mic visible
-    // but explain, so it's never a silently-missing control.
-    micBtn.onclick = () => toast('🎤 Voice input isn’t available on this display. Please type instead.');
+    // The display's browser lacks the free web-speech API, so the only route
+    // to voice is capturing the mic directly. Whether that's possible at all
+    // depends on if the Cast display exposes its microphone to web apps (it's
+    // usually reserved for Google Assistant). Test it on tap so we know whether
+    // ANY voice input — free offline engine or paid cloud — can work here.
+    micBtn.onclick = async () => {
+      toast('🎤 Testing microphone…');
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast('🎤 VERDICT: MIC BLOCKED — this display gives apps no microphone.');
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+        toast('🎤 VERDICT: MIC WORKS — free voice input can be added.');
+      } catch (e) {
+        toast('🎤 VERDICT: MIC BLOCKED (' + (e.name || 'denied') + ') — voice not possible here.');
+      }
+    };
     return;
   }
   const rec = new SR();
