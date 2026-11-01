@@ -35,44 +35,25 @@ function toast(msg) {
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 450); }, 5000);
 }
 
-const DEFAULT_MODEL = 'google/gemma-4-26b-a4b-it:free';
+// Curated list of free models confirmed working right now (verified by sending
+// a real request to each). Kept explicit rather than fetched from the API so
+// the picker never offers a model that has no available provider (which is what
+// caused the old "missing provider" dead-end). Order matters: the first entry
+// is the default, and the whole list doubles as the fallback chain.
+const MODEL_CHOICES = [
+  { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'Nemotron Ultra 550B · free' },
+  { id: 'nvidia/nemotron-3.5-super-vl:free',       label: 'Nemotron 3.5 Super VL · free' },
+  { id: 'cohere/north-mini-code:free',             label: 'Cohere North Mini · free' },
+  { id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', label: 'Nemotron Nano Omni · free' },
+  { id: 'openrouter/free',                         label: 'OpenRouter Auto · free' },
+];
+const DEFAULT_MODEL = MODEL_CHOICES[0].id;
 
-// ---------- Input diagnostics (only if launched with #...&diag=1) ----------
-// Capture-phase listeners on window fire BEFORE any target handler and cannot
-// be blocked by an overlay inside the document, so this is a reliable probe of
-// whether taps reach the page at all and what element is actually on top.
-// Activated only via the URL fragment so normal launches are unaffected.
-if (/(?:#|&)diag=1/.test(location.hash)) {
-  const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99999;' +
-    'background:rgba(20,26,36,.96);color:#e6edf3;border:1px solid #4f8cff;' +
-    'padding:12px 16px;border-radius:12px;font:14px/1.5 monospace;' +
-    'max-width:70%;pointer-events:none;white-space:pre-wrap;';
-  box.textContent = 'DIAG: tap anywhere on the screen...';
-  document.body.appendChild(box);
-  let n = 0;
-  const desc = el => {
-    if (!el) return 'null';
-    let s = el.tagName || '?';
-    if (el.id) s += '#' + el.id;
-    const c = el.className;
-    if (typeof c === 'string' && c) s += '.' + c.trim().split(/\s+/)[0];
-    return s;
-  };
-  const report = (type, e) => {
-    n++;
-    let under = '';
-    if (e.clientX != null || e.clientY != null) {
-      const hit = document.elementFromPoint(e.clientX, e.clientY);
-      under = '  under=' + desc(hit);
-    }
-    box.textContent = 'DIAG n=' + n + '  last=' + type +
-      ' @ ' + Math.round(e.clientX || 0) + ',' + Math.round(e.clientY || 0) +
-      '\ntarget=' + desc(e.target) + under +
-      '\ntopLevel=' + (window.top === window.self);
-  };
-  ['pointerdown', 'touchstart', 'mousedown', 'click'].forEach(t =>
-    window.addEventListener(t, e => report(t, e), true));
+// Returns the model to use: the user's saved pick if it's still in the list,
+// otherwise the default. Guards against a stale saved id from an older build.
+function currentModel() {
+  return (store.model && MODEL_CHOICES.some(m => m.id === store.model))
+    ? store.model : DEFAULT_MODEL;
 }
 
 // ---------- Navigation ----------
@@ -185,7 +166,7 @@ async function testKey() {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + store.key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: store.model || DEFAULT_MODEL, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 })
+      body: JSON.stringify({ model: currentModel(), messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 })
     });
     return res.ok;
   } catch { return false; }
@@ -201,34 +182,43 @@ document.getElementById('overlaySave').onclick = () => {
 document.getElementById('overlayLater').onclick = () =>
   document.getElementById('keyOverlay').classList.remove('active');
 
-// ---------- Models ----------
-let models = [];
-async function loadModels() {
-  const sel = document.getElementById('modelSelect');
-  try {
-    const data = await (await fetch('https://openrouter.ai/api/v1/models')).json();
-    // Prefer known free models; fall back to a curated list.
-    models = data.data
-      .filter(m => (m.pricing && parseFloat(m.pricing.prompt) === 0) || m.id.endsWith(':free'))
-      .map(m => m.id);
-  } catch { models = []; }
-  if (!models.length) {
-    models = [
-      'google/gemma-4-26b-a4b-it:free',
-      'nvidia/nemotron-3.5-lightning:free',
-      'nvidia/nemotron-3.5-super-vl:free',
-      'openrouter/free',
-    ];
-  }
-  sel.innerHTML = '';
-  models.forEach(id => {
-    const o = document.createElement('option');
-    o.value = id; o.textContent = id.split('/').pop().replace(':free', ' (free)');
-    sel.appendChild(o);
-  });
-  if (store.model && models.includes(store.model)) sel.value = store.model;
-  sel.onchange = () => { store.model = sel.value; };
+// ---------- Models (custom touch dropdown) ----------
+// The native <select> does not open on the Cast webview, so we render our own
+// list. loadModels() is kept as the (re)render entry point because the key
+// overlay still calls it after a fresh key is saved.
+function renderModelBtn() {
+  const m = MODEL_CHOICES.find(x => x.id === currentModel()) || MODEL_CHOICES[0];
+  document.getElementById('modelBtn').textContent = m.label + ' ▾';
 }
+
+function loadModels() {
+  const list = document.getElementById('modelList');
+  list.innerHTML = '';
+  MODEL_CHOICES.forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'dropitem' + (m.id === currentModel() ? ' sel' : '');
+    item.textContent = m.label;
+    item.onclick = (e) => {
+      e.stopPropagation();
+      store.model = m.id;
+      renderModelBtn();
+      loadModels();
+      list.classList.remove('open');
+    };
+    list.appendChild(item);
+  });
+  renderModelBtn();
+}
+
+document.getElementById('modelBtn').onclick = (e) => {
+  e.stopPropagation();
+  document.getElementById('modelList').classList.toggle('open');
+};
+// Close the dropdown when tapping anywhere outside it.
+document.addEventListener('click', () => {
+  const l = document.getElementById('modelList');
+  if (l) l.classList.remove('open');
+});
 loadModels();
 
 // ---------- Chat ----------
@@ -255,6 +245,50 @@ chatInput.addEventListener('keydown', e => {
 });
 sendBtn.onclick = send;
 
+// Streams one completion into botEl and returns the accumulated text, or
+// throws if the response is not OK (e.g. "no provider" for a model that is
+// temporarily down).
+async function streamCompletion(model, messages, botEl) {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + store.key,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': location.origin,
+      'X-Title': 'Office Assistant',
+    },
+    body: JSON.stringify({ model, messages, stream: true }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error('HTTP ' + res.status + ': ' + err.slice(0, 160));
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '', full = '';
+  botEl.textContent = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith('data:')) continue;
+      const payload = t.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      try {
+        const j = JSON.parse(payload);
+        const delta = j.choices?.[0]?.delta?.content || '';
+        if (delta) { full += delta; botEl.textContent = full; chatlog.scrollTop = chatlog.scrollHeight; }
+      } catch {}
+    }
+  }
+  return full;
+}
+
 async function send() {
   const text = chatInput.value.trim();
   if (!text) return;
@@ -272,62 +306,99 @@ async function send() {
   const botEl = addMsg('bot', '');
   botEl.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
 
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + store.key,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': location.origin,
-        'X-Title': 'Office Assistant',
-      },
-      body: JSON.stringify({
-        model: store.model || DEFAULT_MODEL,
-        messages: (store.sys ? [{ role: 'system', content: store.sys }] : []).concat(history),
-        stream: true,
-      }),
-    });
+  const messages = (store.sys ? [{ role: 'system', content: store.sys }] : []).concat(history);
+  // Try the selected model first, then fall back through the reliable free
+  // list. This turns a transient "no provider" error into an automatic retry
+  // instead of a dead-end message.
+  const primary = currentModel();
+  const candidates = [primary].concat(MODEL_CHOICES.map(m => m.id).filter(id => id !== primary));
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`HTTP ${res.status}: ${err.slice(0, 200)}`);
+  let lastErr = '';
+  let full = '';
+  for (const model of candidates) {
+    try {
+      full = await streamCompletion(model, messages, botEl);
+      break; // success
+    } catch (e) {
+      lastErr = e.message;
+      continue; // try the next model
     }
-
-    // Parse SSE stream
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '', full = '';
-    botEl.textContent = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-      for (const line of lines) {
-        const t = line.trim();
-        if (!t.startsWith('data:')) continue;
-        const payload = t.slice(5).trim();
-        if (payload === '[DONE]') continue;
-        try {
-          const j = JSON.parse(payload);
-          const delta = j.choices?.[0]?.delta?.content || '';
-          if (delta) { full += delta; botEl.textContent = full; chatlog.scrollTop = chatlog.scrollHeight; }
-        } catch {}
-      }
-    }
-    if (full) history.push({ role: 'assistant', content: full });
-    else botEl.textContent = '…';
-  } catch (e) {
-    botEl.classList.add('error');
-    botEl.textContent = '⚠️ ' + e.message;
-    history.pop(); // drop the failed user turn from context
-  } finally {
-    sendBtn.disabled = false;
-    chatInput.focus();
   }
+
+  if (full) {
+    history.push({ role: 'assistant', content: full });
+  } else {
+    botEl.classList.add('error');
+    botEl.textContent = /401|unauthorized|invalid.*key/i.test(lastErr)
+      ? '⚠️ API key rejected — check it in Settings.'
+      : '⚠️ No free model responded right now. Tap Model to switch, or try again in a minute.';
+    history.pop(); // drop the failed user turn from context
+  }
+
+  sendBtn.disabled = false;
+  chatInput.focus();
 }
+
+// ---------- Voice input (speech-to-text) ----------
+(function setupVoice() {
+  const micBtn = document.getElementById('micBtn');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    // Not supported in this webview — hide the mic rather than show a button
+    // that can never work.
+    if (micBtn) micBtn.style.display = 'none';
+    return;
+  }
+  const rec = new SR();
+  rec.lang = 'en-US';
+  rec.interimResults = true;
+  rec.continuous = false;
+
+  let listening = false;
+  let finalText = '';
+
+  rec.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) finalText += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    chatInput.value = (finalText + interim).trim();
+  };
+  rec.onend = () => {
+    listening = false;
+    micBtn.classList.remove('rec');
+    if (finalText.trim()) {
+      chatInput.value = finalText.trim();
+      send(); // hands-free: speak, then it sends
+    }
+    finalText = '';
+  };
+  rec.onerror = (e) => {
+    listening = false;
+    micBtn.classList.remove('rec');
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      toast('🎤 Microphone blocked — allow mic access to use voice.');
+    } else if (e.error !== 'aborted' && e.error !== 'no-speech') {
+      toast('🎤 Voice input error: ' + e.error);
+    }
+    finalText = '';
+  };
+
+  micBtn.onclick = () => {
+    if (listening) { try { rec.stop(); } catch {} return; }
+    finalText = '';
+    chatInput.value = '';
+    try {
+      rec.start();
+      listening = true;
+      micBtn.classList.add('rec');
+    } catch {
+      toast('🎤 Could not start voice input.');
+    }
+  };
+})();
 
 // One-time key injection via URL fragment (#key=...), with query-param
 // fallback. The fragment is NEVER sent to the server, so the key cannot leak
