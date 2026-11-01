@@ -172,12 +172,14 @@
     border-radius: 12px; padding: 14px 16px; font-size: 15px; font-family: monospace; margin-bottom: 18px; }
   .modal input:focus { outline: none; border-color: var(--accent); }
 
-  /* CAF's <cast-media-player> is a full-screen media surface. Its shadow-DOM
-     internals capture pointer events (to catch play/pause taps), and
-     pointer-events:none on the HOST does not pierce that shadow DOM. The only
-     reliable way to stop it eating taps is to remove it from rendering and
-     hit-testing entirely. We never play media, so hiding it is safe. */
-  cast-media-player { display: none !important; }
+  /* CAF injects two full-screen overlays that sit above the app and swallow
+     every tap: <cast-media-player> (the media surface — its shadow-DOM internals
+     capture pointer events) and <touch-controls> (Cast's touch-gesture layer on
+     touch devices like a Smart Display). pointer-events:none on a HOST does not
+     pierce a shadow DOM, so the only reliable fix is to remove both from
+     rendering and hit-testing entirely. We never play Cast media and don't want
+     CAF's swipe-to-exit gestures in a kiosk, so hiding both is safe. */
+  cast-media-player, touch-controls { display: none !important; }
   .screen { z-index: 10; }
 
   .scrollbar::-webkit-scrollbar, ::-webkit-scrollbar { width: 10px; height: 10px; }
